@@ -12,6 +12,7 @@ var _Big = _interopDefault(require('big.js'));
 var toFormat = _interopDefault(require('toformat'));
 var _Decimal = _interopDefault(require('decimal.js-light'));
 var solidity = require('@ethersproject/solidity');
+var abi = require('@ethersproject/abi');
 var contracts = require('@ethersproject/contracts');
 var networks = require('@ethersproject/networks');
 var providers = require('@ethersproject/providers');
@@ -64,6 +65,12 @@ var SolidityType;
 })(SolidityType || (SolidityType = {}));
 
 var SOLIDITY_TYPE_MAXIMA = (_SOLIDITY_TYPE_MAXIMA = {}, _SOLIDITY_TYPE_MAXIMA[SolidityType.uint8] = /*#__PURE__*/JSBI.BigInt('0xff'), _SOLIDITY_TYPE_MAXIMA[SolidityType.uint256] = /*#__PURE__*/JSBI.BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'), _SOLIDITY_TYPE_MAXIMA);
+var ROUTER_COMMANDS = {
+  FEW_V2_SWAP_EXACT_IN: '0x23',
+  FEW_V2_SWAP_EXACT_OUT: '0x24',
+  RING_V2_SWAP_EXACT_IN: '0x25',
+  RING_V2_SWAP_EXACT_OUT: '0x26'
+};
 
 function _defineProperties(target, props) {
   for (var i = 0; i < props.length; i++) {
@@ -1404,60 +1411,83 @@ var Router = /*#__PURE__*/function () {
     var path = trade.route.path.map(function (token) {
       return token.address;
     });
-    var deadline = 'ttl' in options ? "0x" + (Math.floor(new Date().getTime() / 1000) + options.ttl).toString(16) : "0x" + options.deadline.toString(16);
-    var useFeeOnTransfer = Boolean(options.feeOnTransfer);
-    var methodName;
-    var args;
-    var value;
+    var deadline = 'ttl' in options ? "0x" + (Math.floor(new Date().getTime() / 1000) + options.ttl).toString(16) : "0x" + options.deadline.toString(16); // const useFeeOnTransfer = Boolean(options.feeOnTransfer)
 
-    switch (trade.tradeType) {
-      case exports.TradeType.EXACT_INPUT:
-        if (etherIn) {
-          methodName = useFeeOnTransfer ? 'swapExactETHForTokensSupportingFeeOnTransferTokens' : 'swapExactETHForTokens'; // (uint amountOutMin, address[] calldata path, address to, uint deadline)
+    return Router.resolveRingRouterParameters(trade.tradeType, etherIn, etherOut, amountIn, amountOut, to, path, deadline); // let methodName: string
+    // let args: (string | string[])[]
+    // let value: string
+    // switch (trade.tradeType) {
+    //   case TradeType.EXACT_INPUT:
+    //     if (etherIn) {
+    //       methodName = useFeeOnTransfer ? 'swapExactETHForTokensSupportingFeeOnTransferTokens' : 'swapExactETHForTokens'
+    //       // (uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, path, to, deadline]
+    //       value = amountIn
+    //     } else if (etherOut) {
+    //       methodName = useFeeOnTransfer ? 'swapExactTokensForETHSupportingFeeOnTransferTokens' : 'swapExactTokensForETH'
+    //       // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountIn, amountOut, path, to, deadline]
+    //       value = ZERO_HEX
+    //     } else {
+    //       methodName = useFeeOnTransfer
+    //         ? 'swapExactTokensForTokensSupportingFeeOnTransferTokens'
+    //         : 'swapExactTokensForTokens'
+    //       // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountIn, amountOut, path, to, deadline]
+    //       value = ZERO_HEX
+    //     }
+    //     break
+    //   case TradeType.EXACT_OUTPUT:
+    //     invariant(!useFeeOnTransfer, 'EXACT_OUT_FOT')
+    //     if (etherIn) {
+    //       methodName = 'swapETHForExactTokens'
+    //       // (uint amountOut, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, path, to, deadline]
+    //       value = amountIn
+    //     } else if (etherOut) {
+    //       methodName = 'swapTokensForExactETH'
+    //       // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, amountIn, path, to, deadline]
+    //       value = ZERO_HEX
+    //     } else {
+    //       methodName = 'swapTokensForExactTokens'
+    //       // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, amountIn, path, to, deadline]
+    //       value = ZERO_HEX
+    //     }
+    //     break
+    // }
+    // return {
+    //   methodName,
+    //   args,
+    //   value
+    // }
+  };
 
-          args = [amountOut, path, to, deadline];
-          value = amountIn;
-        } else if (etherOut) {
-          methodName = useFeeOnTransfer ? 'swapExactTokensForETHSupportingFeeOnTransferTokens' : 'swapExactTokensForETH'; // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+  Router.resolveRingRouterParameters = function resolveRingRouterParameters(tradeType, etherIn, etherOut, amountIn, amountOut, recipient, path, deadline) {
+    var methodName = 'execute';
 
-          args = [amountIn, amountOut, path, to, deadline];
-          value = ZERO_HEX;
-        } else {
-          methodName = useFeeOnTransfer ? 'swapExactTokensForTokensSupportingFeeOnTransferTokens' : 'swapExactTokensForTokens'; // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    if (tradeType === exports.TradeType.EXACT_INPUT) {
+      var _command = etherIn || etherOut ? ROUTER_COMMANDS.FEW_V2_SWAP_EXACT_IN : ROUTER_COMMANDS.RING_V2_SWAP_EXACT_IN;
 
-          args = [amountIn, amountOut, path, to, deadline];
-          value = ZERO_HEX;
-        }
+      var _inputs = [recipient, amountIn, amountOut, path, true, true];
 
-        break;
+      var _encodedInputs = abi.Interface.getAbiCoder().encode(['address', 'uint256', 'uint256', 'bytes', 'bool', 'bool'], _inputs);
 
-      case exports.TradeType.EXACT_OUTPUT:
-        !!useFeeOnTransfer ?  invariant(false, 'EXACT_OUT_FOT')  : void 0;
-
-        if (etherIn) {
-          methodName = 'swapETHForExactTokens'; // (uint amountOut, address[] calldata path, address to, uint deadline)
-
-          args = [amountOut, path, to, deadline];
-          value = amountIn;
-        } else if (etherOut) {
-          methodName = 'swapTokensForExactETH'; // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
-
-          args = [amountOut, amountIn, path, to, deadline];
-          value = ZERO_HEX;
-        } else {
-          methodName = 'swapTokensForExactTokens'; // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
-
-          args = [amountOut, amountIn, path, to, deadline];
-          value = ZERO_HEX;
-        }
-
-        break;
+      return {
+        methodName: methodName,
+        args: [_command, [_encodedInputs], deadline],
+        value: etherIn ? amountIn : ZERO_HEX
+      };
     }
 
+    var command = etherIn || etherOut ? ROUTER_COMMANDS.FEW_V2_SWAP_EXACT_OUT : ROUTER_COMMANDS.RING_V2_SWAP_EXACT_OUT;
+    var inputs = [recipient, amountOut, amountIn, path, true, true];
+    var encodedInputs = abi.Interface.getAbiCoder().encode(['address', 'uint256', 'uint256', 'bytes', 'bool', 'bool'], inputs);
     return {
       methodName: methodName,
-      args: args,
-      value: value
+      args: [command, [encodedInputs], deadline],
+      value: etherIn ? amountIn : ZERO_HEX
     };
   };
 

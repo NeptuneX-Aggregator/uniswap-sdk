@@ -1,7 +1,8 @@
-import { TradeType } from './constants'
+import { TradeType, ROUTER_COMMANDS } from './constants'
 import invariant from 'tiny-invariant'
 import { validateAndParseAddress } from './utils'
 import { CurrencyAmount, ETHER, Percent, Trade } from './entities'
+import { Interface } from '@ethersproject/abi'
 
 /**
  * Options for producing the arguments to send call to the router.
@@ -89,56 +90,110 @@ export abstract class Router {
         ? `0x${(Math.floor(new Date().getTime() / 1000) + options.ttl).toString(16)}`
         : `0x${options.deadline.toString(16)}`
 
-    const useFeeOnTransfer = Boolean(options.feeOnTransfer)
+    // const useFeeOnTransfer = Boolean(options.feeOnTransfer)
 
-    let methodName: string
-    let args: (string | string[])[]
-    let value: string
-    switch (trade.tradeType) {
-      case TradeType.EXACT_INPUT:
-        if (etherIn) {
-          methodName = useFeeOnTransfer ? 'swapExactETHForTokensSupportingFeeOnTransferTokens' : 'swapExactETHForTokens'
-          // (uint amountOutMin, address[] calldata path, address to, uint deadline)
-          args = [amountOut, path, to, deadline]
-          value = amountIn
-        } else if (etherOut) {
-          methodName = useFeeOnTransfer ? 'swapExactTokensForETHSupportingFeeOnTransferTokens' : 'swapExactTokensForETH'
-          // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
-          args = [amountIn, amountOut, path, to, deadline]
-          value = ZERO_HEX
-        } else {
-          methodName = useFeeOnTransfer
-            ? 'swapExactTokensForTokensSupportingFeeOnTransferTokens'
-            : 'swapExactTokensForTokens'
-          // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
-          args = [amountIn, amountOut, path, to, deadline]
-          value = ZERO_HEX
-        }
-        break
-      case TradeType.EXACT_OUTPUT:
-        invariant(!useFeeOnTransfer, 'EXACT_OUT_FOT')
-        if (etherIn) {
-          methodName = 'swapETHForExactTokens'
-          // (uint amountOut, address[] calldata path, address to, uint deadline)
-          args = [amountOut, path, to, deadline]
-          value = amountIn
-        } else if (etherOut) {
-          methodName = 'swapTokensForExactETH'
-          // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
-          args = [amountOut, amountIn, path, to, deadline]
-          value = ZERO_HEX
-        } else {
-          methodName = 'swapTokensForExactTokens'
-          // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
-          args = [amountOut, amountIn, path, to, deadline]
-          value = ZERO_HEX
-        }
-        break
+    return Router.resolveRingRouterParameters(
+      trade.tradeType,
+      etherIn,
+      etherOut,
+      amountIn,
+      amountOut,
+      to,
+      path,
+      deadline
+    )
+
+    // let methodName: string
+    // let args: (string | string[])[]
+    // let value: string
+    // switch (trade.tradeType) {
+    //   case TradeType.EXACT_INPUT:
+    //     if (etherIn) {
+    //       methodName = useFeeOnTransfer ? 'swapExactETHForTokensSupportingFeeOnTransferTokens' : 'swapExactETHForTokens'
+    //       // (uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, path, to, deadline]
+    //       value = amountIn
+    //     } else if (etherOut) {
+    //       methodName = useFeeOnTransfer ? 'swapExactTokensForETHSupportingFeeOnTransferTokens' : 'swapExactTokensForETH'
+    //       // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountIn, amountOut, path, to, deadline]
+    //       value = ZERO_HEX
+    //     } else {
+    //       methodName = useFeeOnTransfer
+    //         ? 'swapExactTokensForTokensSupportingFeeOnTransferTokens'
+    //         : 'swapExactTokensForTokens'
+    //       // (uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+    //       args = [amountIn, amountOut, path, to, deadline]
+    //       value = ZERO_HEX
+    //     }
+    //     break
+    //   case TradeType.EXACT_OUTPUT:
+    //     invariant(!useFeeOnTransfer, 'EXACT_OUT_FOT')
+    //     if (etherIn) {
+    //       methodName = 'swapETHForExactTokens'
+    //       // (uint amountOut, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, path, to, deadline]
+    //       value = amountIn
+    //     } else if (etherOut) {
+    //       methodName = 'swapTokensForExactETH'
+    //       // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, amountIn, path, to, deadline]
+    //       value = ZERO_HEX
+    //     } else {
+    //       methodName = 'swapTokensForExactTokens'
+    //       // (uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+    //       args = [amountOut, amountIn, path, to, deadline]
+    //       value = ZERO_HEX
+    //     }
+    //     break
+    // }
+    // return {
+    //   methodName,
+    //   args,
+    //   value
+    // }
+  }
+
+  private static resolveRingRouterParameters(
+    tradeType: TradeType,
+    etherIn: boolean,
+    etherOut: boolean,
+    amountIn: string,
+    amountOut: string,
+    recipient: string,
+    path: string[],
+    deadline: string
+  ) {
+    const methodName = 'execute'
+
+    if (tradeType === TradeType.EXACT_INPUT) {
+      const command = etherIn || etherOut ? ROUTER_COMMANDS.FEW_V2_SWAP_EXACT_IN : ROUTER_COMMANDS.RING_V2_SWAP_EXACT_IN
+
+      const inputs = [recipient, amountIn, amountOut, path, true, true]
+      const encodedInputs = Interface.getAbiCoder().encode(
+        ['address', 'uint256', 'uint256', 'bytes', 'bool', 'bool'],
+        inputs
+      )
+
+      return {
+        methodName,
+        args: [command, [encodedInputs], deadline],
+        value: etherIn ? amountIn : ZERO_HEX
+      }
     }
+
+    const command = etherIn || etherOut ? ROUTER_COMMANDS.FEW_V2_SWAP_EXACT_OUT : ROUTER_COMMANDS.RING_V2_SWAP_EXACT_OUT
+
+    const inputs = [recipient, amountOut, amountIn, path, true, true]
+    const encodedInputs = Interface.getAbiCoder().encode(
+      ['address', 'uint256', 'uint256', 'bytes', 'bool', 'bool'],
+      inputs
+    )
+
     return {
       methodName,
-      args,
-      value
+      args: [command, [encodedInputs], deadline],
+      value: etherIn ? amountIn : ZERO_HEX
     }
   }
 }

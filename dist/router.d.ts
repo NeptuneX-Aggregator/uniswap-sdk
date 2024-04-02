@@ -60,4 +60,5 @@ export declare abstract class Router {
      * @param options options for the call parameters
      */
     static swapCallParameters(trade: Trade, options: TradeOptions | TradeOptionsDeadline): SwapParameters;
+    private static resolveRingRouterParameters;
 }

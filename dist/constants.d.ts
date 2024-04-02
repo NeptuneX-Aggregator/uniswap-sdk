@@ -41,3 +41,9 @@ export declare const SOLIDITY_TYPE_MAXIMA: {
     uint8: JSBI;
     uint256: JSBI;
 };
+export declare const ROUTER_COMMANDS: {
+    FEW_V2_SWAP_EXACT_IN: string;
+    FEW_V2_SWAP_EXACT_OUT: string;
+    RING_V2_SWAP_EXACT_IN: string;
+    RING_V2_SWAP_EXACT_OUT: string;
+};

@@ -53,3 +53,10 @@ export const SOLIDITY_TYPE_MAXIMA = {
   [SolidityType.uint8]: JSBI.BigInt('0xff'),
   [SolidityType.uint256]: JSBI.BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
 }
+
+export const ROUTER_COMMANDS = {
+  FEW_V2_SWAP_EXACT_IN: '0x23',
+  FEW_V2_SWAP_EXACT_OUT: '0x24',
+  RING_V2_SWAP_EXACT_IN: '0x25',
+  RING_V2_SWAP_EXACT_OUT: '0x26'
+}
